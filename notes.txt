@@ -1,0 +1,30 @@
+APIs I am looking at with the parser generation
+
+Some form of error recovery mode that allows recovering errors inside functions or statements, if possible
+
+So like if an error occurs within an expression in statement block, it will recover up until the terminating bracket of the block, with a balancing mechanism
+
+A interface and a listener interface, 
+
+
+
+
+
+Maybe error recovery could look something like the following, where push increments a counter, and pop decrements it, these can only be single terminals
+recovery block:
+push := RBRACE
+pop  := LBRACE #if the counter is 0, this ends the recovery here
+
+recovery global:
+push := RBRACE
+pop  := RBRACE
+end  := SEMICOLON #end doesn't pop anything, it just checks if the counter is 0 and ends the recovery
+
+usage would be something like
+block := LBRACE expression* RBRACE @recover(block);
+
+Alongside this, errors need to be able to POP states in the lexer for use in say a syntax highlighter
+
+
+Errors should also be able to give messages
+like @error(POP) 'Unterminated string literal' := '\n';
