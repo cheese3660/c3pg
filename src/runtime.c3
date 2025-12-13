@@ -51,7 +51,7 @@ fn void StdErrLogger.log_error(&self, Span span, String message, String filename
         DString span_data;
         for (usz j = current_line_start; j < file_view.len && file_view[j] != '\r' && file_view[j] != '\n'; j++)
         {
-            if (j == '\t')
+            if (file_view[j] == '\t')
             {
                 file_data.append_chars("    ");
                 if (j >= span.begin && j < span.begin + span.length)

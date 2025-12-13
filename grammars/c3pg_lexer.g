@@ -16,14 +16,16 @@ lexer_info := INFORMATION_IDENT{name} INFORMATION_SEPARATOR namespaced_info;
 
 namespaced_info := INFORMATION_IDENT{children} (INFORMATION_NAMESPACE INFORMATION_IDENT{children})*;  # When the {...} is here, the generator should be smart enough to know that there can be multiple
 
-terminal := named_terminal @nowrap
-         |  drop_terminal @nowrap
-         |  error_terminal @nowrap
-         ;
+terminal := terminal_type DEFINITION pattern;
 
-named_terminal := IDENT{name} next_state? DEFINITION pattern;
+terminal_type := named_terminal @nowrap
+              |  drop_terminal @nowrap
+              |  error_terminal @nowrap
+              ;
 
-drop_terminal  := DROP next_state? DEFINITION pattern;
+named_terminal := IDENT{name} next_state?;
+
+drop_terminal  := DROP next_state?;
 
 error_terminal := ERROR;
 
@@ -43,6 +45,4 @@ pattern         := string @nowrap
 string          := STRING_BEGIN CHARACTER{contents}+ STRING_END;
 regex           := REGEX_BEGIN  CHARACTER{contents}+ REGEX_END;
 
-mode            := mode_definition terminal+;
-
-mode_definition := MODE MODE_ERRORS? IDENT MODE_BEGIN;
+mode            := MODE MODE_ERRORS{err}? IDENT{name} MODE_BEGIN terminal+;

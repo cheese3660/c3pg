@@ -39,12 +39,14 @@ fn void NextStateContext.free(&self, Allocator a) @inline
 struct ModeContext
 {
 	LexerNode*[] terminal;
-	LexerNode* mode_definition;
+	LexerToken name;
+	LexerToken[] err;
 }
 
 fn void ModeContext.free(&self, Allocator a) @inline
 {
 	allocator::free(a, self.terminal);
+	allocator::free(a, self.err);
 }
 
 struct StringContext
@@ -79,7 +81,6 @@ fn void LexerInfoContext.free(&self, Allocator a) @inline
 
 struct NamedTerminalContext
 {
-	LexerNode* pattern;
 	LexerNode*[] next_state;
 	LexerToken name;
 }
@@ -91,7 +92,6 @@ fn void NamedTerminalContext.free(&self, Allocator a) @inline
 
 struct DropTerminalContext
 {
-	LexerNode* pattern;
 	LexerNode*[] next_state;
 }
 
@@ -120,6 +120,16 @@ fn void RootContext.free(&self, Allocator a) @inline
 {
 	allocator::free(a, self.mode);
 	allocator::free(a, self.terminal);
+}
+
+struct TerminalContext
+{
+	LexerNode* pattern;
+	LexerNode* terminal_type;
+}
+
+fn void TerminalContext.free(&self, Allocator a) @inline
+{
 }
 
 struct NamespacedInfoContext
@@ -152,10 +162,10 @@ enum LexerNodeT
 	LEXER_DEFINITION,
 	LEXER_INFO,
 	NAMED_TERMINAL,
-	MODE_DEFINITION,
 	DROP_TERMINAL,
 	TERMINAL_IDENT,
 	ROOT,
+	TERMINAL,
 	NAMESPACED_INFO,
 	ERROR_TERMINAL,
 	REGEX,
@@ -179,6 +189,7 @@ struct LexerNode
 		DropTerminalContext drop_terminal;
 		TerminalIdentContext terminal_ident;
 		RootContext root;
+		TerminalContext terminal;
 		NamespacedInfoContext namespaced_info;
 		RegexContext regex;
 	}
@@ -214,6 +225,8 @@ fn void LexerNode.free(&self, Allocator a)
 			self.terminal_ident.free(a);
 		case ROOT:
 			self.root.free(a);
+		case TERMINAL:
+			self.terminal.free(a);
 		case NAMESPACED_INFO:
 			self.namespaced_info.free(a);
 		case REGEX:
@@ -240,19 +253,24 @@ fn LexerParser create_lexer_parser(LexerLexer* lexer, Allocator allocator = mem,
 	return {lexer, allocator, logger, false};
 }
 
-fn LexerToken LexerParser.peek(&self) @inline @private
+fn LexerToken? LexerParser.peek(&self) @inline @private
 {
+	if (!self.primed)
+	{
+		self.primed = true;
+		self.lexer.advance()!;
+	}
 	return self.lexer.current;
 }
 
-fn LexerTokenT LexerParser.peek_t(&self) @inline @private
+fn LexerTokenT? LexerParser.peek_t(&self) @inline @private
 {
-	return self.peek().type;
+	return self.peek()!.type;
 }
 
 fn Span? LexerParser.next(&self, Span current) @inline @private
 {
-	Span result = self.peek().span;
+	Span result = self.peek()!.span;
 	if (current.begin != usz.max) result = current + result;
 	self.lexer.advance()!;
 	return result;
@@ -270,18 +288,18 @@ fn void LexerParser.log_current(&self, String message) @inline @private
 
 fn void LexerParser.log_unexpected(&self, String expected) @inline @private
 {
-	self.log_current(string::tformat(`Unexpected token "%s", expected %s;`, runtime::get_terminal_name(self.peek_t()), expected));
+	self.log_current(string::tformat(`Unexpected token "%s", expected %s;`, runtime::get_terminal_name(self.peek_t()!!), expected));
 }
 
-macro bool LexerParser.peek_is(&self, ...) @private
+macro bool? LexerParser.peek_is(&self, ...) @private
 {
-	var current = self.peek_t();
+	var current = self.peek_t()!;
 	return runtime::is_any_of(current, $vasplat);
 }
 
 macro Span? LexerParser.expect(&self, Span current_span, ...) @private
 {
-	if (self.peek_is($vasplat))
+	if (self.peek_is($vasplat)!)
 	{
 		return self.next(current_span);
 	}
@@ -311,12 +329,12 @@ fn LexerNode*? LexerParser.parse_next_state(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.LPAREN)!;
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		name = c[^1].terminal;
 		s = self.expect(s,LexerTokenT.IDENT)!;
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.RPAREN)!;
 
 		/* construct the parsed node from the returned fields and information */
@@ -332,15 +350,34 @@ fn LexerNode*? LexerParser.parse_next_state(&self)
 
 fn LexerNode*? LexerParser.parse_pattern(&self)
 {
-	if (self.peek_is(LexerTokenT.STRING_BEGIN))
+	if (self.peek_is(LexerTokenT.STRING_BEGIN)!)
 	{
 		return self.parse_string();
 	}
-	if (self.peek_is(LexerTokenT.REGEX_BEGIN))
+	if (self.peek_is(LexerTokenT.REGEX_BEGIN)!)
 	{
 		return self.parse_regex();
 	}
 	self.log_unexpected(runtime::get_expected_sequence(LexerTokenT.REGEX_BEGIN, LexerTokenT.STRING_BEGIN));
+	return runtime::UNEXPECTED_TOKEN?;
+}
+
+
+fn LexerNode*? LexerParser.parse_terminal_type(&self)
+{
+	if (self.peek_is(LexerTokenT.IDENT)!)
+	{
+		return self.parse_named_terminal();
+	}
+	if (self.peek_is(LexerTokenT.DROP)!)
+	{
+		return self.parse_drop_terminal();
+	}
+	if (self.peek_is(LexerTokenT.ERROR)!)
+	{
+		return self.parse_error_terminal();
+	}
+	self.log_unexpected(runtime::get_expected_sequence(LexerTokenT.ERROR, LexerTokenT.DROP, LexerTokenT.IDENT));
 	return runtime::UNEXPECTED_TOKEN?;
 }
 
@@ -353,7 +390,8 @@ fn LexerNode*? LexerParser.parse_mode(&self)
 		Span s = {usz.max,usz.max};
 		List { LexerNodeChild } c;
 		List { LexerNode* } terminal;
-		LexerNode* mode_definition;
+		LexerToken name;
+		List { LexerToken } err;
 
 		/* make sure that the tree doesn't get leaked on a failed parse */
 		defer catch
@@ -368,15 +406,25 @@ fn LexerNode*? LexerParser.parse_mode(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = false, .nonterminal = self.parse_mode_definition()!});
-		mode_definition = c[^1].nonterminal;
-		s += c[^1].nonterminal.span;
+		c.push({.is_terminal = true, .terminal = self.peek()!});
+		s = self.expect(s,LexerTokenT.MODE)!;
+		if (self.peek_is(MODE_ERRORS)!)
+		{
+			c.push({.is_terminal = true, .terminal = self.peek()!});
+			err.push(c[^1].terminal);
+			s = self.expect(s,LexerTokenT.MODE_ERRORS)!;
+		}
+		c.push({.is_terminal = true, .terminal = self.peek()!});
+		name = c[^1].terminal;
+		s = self.expect(s,LexerTokenT.IDENT)!;
+		c.push({.is_terminal = true, .terminal = self.peek()!});
+		s = self.expect(s,LexerTokenT.MODE_BEGIN)!;
 		do
 		{
 			c.push({.is_terminal = false, .nonterminal = self.parse_terminal()!});
 			terminal.push(c[^1].nonterminal);
-			s += c[^1].nonterminal.span;
-		} while (self.peek_is(LexerTokenT.ERROR, LexerTokenT.IDENT, LexerTokenT.DROP));
+			s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
+		} while (self.peek_is(LexerTokenT.ERROR, LexerTokenT.DROP, LexerTokenT.IDENT)!);
 
 		/* construct the parsed node from the returned fields and information */
 		LexerNode* r = allocator::new(self.allocator, LexerNode);
@@ -384,7 +432,8 @@ fn LexerNode*? LexerParser.parse_mode(&self)
 		r.span = s;
 		r.children = c.to_array(self.allocator);
 		r.mode.terminal = terminal.to_array(self.allocator);
-		r.mode.mode_definition = mode_definition;
+		r.mode.name = name;
+		r.mode.err = err.to_array(self.allocator);
 		return r;
 	};
 }
@@ -412,15 +461,15 @@ fn LexerNode*? LexerParser.parse_string(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.STRING_BEGIN)!;
 		do
 		{
-			c.push({.is_terminal = true, .terminal = self.peek()});
+			c.push({.is_terminal = true, .terminal = self.peek()!});
 			contents.push(c[^1].terminal);
 			s = self.expect(s,LexerTokenT.CHARACTER)!;
-		} while (self.peek_is(CHARACTER));
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		} while (self.peek_is(CHARACTER)!);
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.STRING_END)!;
 
 		/* construct the parsed node from the returned fields and information */
@@ -456,17 +505,17 @@ fn LexerNode*? LexerParser.parse_lexer_definition(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.LEXER_IDENTIFIER)!;
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.BEGIN_INFORMATION)!;
-		while (self.peek_is(LexerTokenT.INFORMATION_IDENT))
+		while (self.peek_is(LexerTokenT.INFORMATION_IDENT)!)
 		{
 			c.push({.is_terminal = false, .nonterminal = self.parse_lexer_info()!});
 			lexer_info.push(c[^1].nonterminal);
-			s += c[^1].nonterminal.span;
+			s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
 		}
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.END_INFORMATION)!;
 
 		/* construct the parsed node from the returned fields and information */
@@ -503,14 +552,14 @@ fn LexerNode*? LexerParser.parse_lexer_info(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		name = c[^1].terminal;
 		s = self.expect(s,LexerTokenT.INFORMATION_IDENT)!;
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.INFORMATION_SEPARATOR)!;
 		c.push({.is_terminal = false, .nonterminal = self.parse_namespaced_info()!});
 		namespaced_info = c[^1].nonterminal;
-		s += c[^1].nonterminal.span;
+		s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
 
 		/* construct the parsed node from the returned fields and information */
 		LexerNode* r = allocator::new(self.allocator, LexerNode);
@@ -531,7 +580,6 @@ fn LexerNode*? LexerParser.parse_named_terminal(&self)
 		/* setup returned fields and returned information */
 		Span s = {usz.max,usz.max};
 		List { LexerNodeChild } c;
-		LexerNode* pattern;
 		List { LexerNode* } next_state;
 		LexerToken name;
 
@@ -548,72 +596,23 @@ fn LexerNode*? LexerParser.parse_named_terminal(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		name = c[^1].terminal;
 		s = self.expect(s,LexerTokenT.IDENT)!;
-		if (self.peek_is(LexerTokenT.LPAREN))
+		if (self.peek_is(LexerTokenT.LPAREN)!)
 		{
 			c.push({.is_terminal = false, .nonterminal = self.parse_next_state()!});
 			next_state.push(c[^1].nonterminal);
-			s += c[^1].nonterminal.span;
+			s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
 		}
-		c.push({.is_terminal = true, .terminal = self.peek()});
-		s = self.expect(s,LexerTokenT.DEFINITION)!;
-		c.push({.is_terminal = false, .nonterminal = self.parse_pattern()!});
-		pattern = c[^1].nonterminal;
-		s += c[^1].nonterminal.span;
 
 		/* construct the parsed node from the returned fields and information */
 		LexerNode* r = allocator::new(self.allocator, LexerNode);
 		r.type = NAMED_TERMINAL;
 		r.span = s;
 		r.children = c.to_array(self.allocator);
-		r.named_terminal.pattern = pattern;
 		r.named_terminal.next_state = next_state.to_array(self.allocator);
 		r.named_terminal.name = name;
-		return r;
-	};
-}
-
-
-fn LexerNode*? LexerParser.parse_mode_definition(&self)
-{
-	@pool()
-	{
-		/* setup returned fields and returned information */
-		Span s = {usz.max,usz.max};
-		List { LexerNodeChild } c;
-
-		/* make sure that the tree doesn't get leaked on a failed parse */
-		defer catch
-		{
-			foreach (n : c)
-			{
-				if (!n.is_terminal)
-				{
-					n.nonterminal.free(self.allocator);
-				}
-			}
-		}
-
-		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
-		s = self.expect(s,LexerTokenT.MODE)!;
-		if (self.peek_is(MODE_ERRORS))
-		{
-			c.push({.is_terminal = true, .terminal = self.peek()});
-			s = self.expect(s,LexerTokenT.MODE_ERRORS)!;
-		}
-		c.push({.is_terminal = true, .terminal = self.peek()});
-		s = self.expect(s,LexerTokenT.IDENT)!;
-		c.push({.is_terminal = true, .terminal = self.peek()});
-		s = self.expect(s,LexerTokenT.MODE_BEGIN)!;
-
-		/* construct the parsed node from the returned fields and information */
-		LexerNode* r = allocator::new(self.allocator, LexerNode);
-		r.type = MODE_DEFINITION;
-		r.span = s;
-		r.children = c.to_array(self.allocator);
 		return r;
 	};
 }
@@ -626,7 +625,6 @@ fn LexerNode*? LexerParser.parse_drop_terminal(&self)
 		/* setup returned fields and returned information */
 		Span s = {usz.max,usz.max};
 		List { LexerNodeChild } c;
-		LexerNode* pattern;
 		List { LexerNode* } next_state;
 
 		/* make sure that the tree doesn't get leaked on a failed parse */
@@ -642,26 +640,20 @@ fn LexerNode*? LexerParser.parse_drop_terminal(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.DROP)!;
-		if (self.peek_is(LexerTokenT.LPAREN))
+		if (self.peek_is(LexerTokenT.LPAREN)!)
 		{
 			c.push({.is_terminal = false, .nonterminal = self.parse_next_state()!});
 			next_state.push(c[^1].nonterminal);
-			s += c[^1].nonterminal.span;
+			s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
 		}
-		c.push({.is_terminal = true, .terminal = self.peek()});
-		s = self.expect(s,LexerTokenT.DEFINITION)!;
-		c.push({.is_terminal = false, .nonterminal = self.parse_pattern()!});
-		pattern = c[^1].nonterminal;
-		s += c[^1].nonterminal.span;
 
 		/* construct the parsed node from the returned fields and information */
 		LexerNode* r = allocator::new(self.allocator, LexerNode);
 		r.type = DROP_TERMINAL;
 		r.span = s;
 		r.children = c.to_array(self.allocator);
-		r.drop_terminal.pattern = pattern;
 		r.drop_terminal.next_state = next_state.to_array(self.allocator);
 		return r;
 	};
@@ -670,7 +662,7 @@ fn LexerNode*? LexerParser.parse_drop_terminal(&self)
 
 fn LexerNode*? LexerParser.parse_terminal_ident(&self)
 {
-	if (self.peek_is(LexerTokenT.IDENT))
+	if (self.peek_is(LexerTokenT.IDENT)!)
 	{
 		@pool()
 		{
@@ -692,7 +684,7 @@ fn LexerNode*? LexerParser.parse_terminal_ident(&self)
 			}
 
 			/* attempt to parse the node */
-			c.push({.is_terminal = true, .terminal = self.peek()});
+			c.push({.is_terminal = true, .terminal = self.peek()!});
 			name = c[^1].terminal;
 			s = self.expect(s,LexerTokenT.IDENT)!;
 
@@ -705,7 +697,7 @@ fn LexerNode*? LexerParser.parse_terminal_ident(&self)
 			return r;
 		};
 	}
-	if (self.peek_is(LexerTokenT.DROP))
+	if (self.peek_is(LexerTokenT.DROP)!)
 	{
 		@pool()
 		{
@@ -727,7 +719,7 @@ fn LexerNode*? LexerParser.parse_terminal_ident(&self)
 			}
 
 			/* attempt to parse the node */
-			c.push({.is_terminal = true, .terminal = self.peek()});
+			c.push({.is_terminal = true, .terminal = self.peek()!});
 			s = self.expect(s,LexerTokenT.DROP)!;
 
 			/* construct the parsed node from the returned fields and information */
@@ -739,7 +731,7 @@ fn LexerNode*? LexerParser.parse_terminal_ident(&self)
 			return r;
 		};
 	}
-	if (self.peek_is(LexerTokenT.ERROR))
+	if (self.peek_is(LexerTokenT.ERROR)!)
 	{
 		@pool()
 		{
@@ -761,7 +753,7 @@ fn LexerNode*? LexerParser.parse_terminal_ident(&self)
 			}
 
 			/* attempt to parse the node */
-			c.push({.is_terminal = true, .terminal = self.peek()});
+			c.push({.is_terminal = true, .terminal = self.peek()!});
 			s = self.expect(s,LexerTokenT.ERROR)!;
 
 			/* construct the parsed node from the returned fields and information */
@@ -804,20 +796,20 @@ fn LexerNode*? LexerParser.parse_root(&self)
 		/* attempt to parse the node */
 		c.push({.is_terminal = false, .nonterminal = self.parse_lexer_definition()!});
 		lexer_definition = c[^1].nonterminal;
-		s += c[^1].nonterminal.span;
+		s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
 		do
 		{
 			c.push({.is_terminal = false, .nonterminal = self.parse_terminal()!});
 			terminal.push(c[^1].nonterminal);
-			s += c[^1].nonterminal.span;
-		} while (self.peek_is(LexerTokenT.ERROR, LexerTokenT.IDENT, LexerTokenT.DROP));
-		while (self.peek_is(LexerTokenT.MODE))
+			s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
+		} while (self.peek_is(LexerTokenT.ERROR, LexerTokenT.DROP, LexerTokenT.IDENT)!);
+		while (self.peek_is(LexerTokenT.MODE)!)
 		{
 			c.push({.is_terminal = false, .nonterminal = self.parse_mode()!});
 			mode.push(c[^1].nonterminal);
-			s += c[^1].nonterminal.span;
+			s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
 		}
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.EOF)!;
 
 		/* construct the parsed node from the returned fields and information */
@@ -835,20 +827,45 @@ fn LexerNode*? LexerParser.parse_root(&self)
 
 fn LexerNode*? LexerParser.parse_terminal(&self)
 {
-	if (self.peek_is(LexerTokenT.IDENT))
+	@pool()
 	{
-		return self.parse_named_terminal();
-	}
-	if (self.peek_is(LexerTokenT.DROP))
-	{
-		return self.parse_drop_terminal();
-	}
-	if (self.peek_is(LexerTokenT.ERROR))
-	{
-		return self.parse_error_terminal();
-	}
-	self.log_unexpected(runtime::get_expected_sequence(LexerTokenT.ERROR, LexerTokenT.DROP, LexerTokenT.IDENT));
-	return runtime::UNEXPECTED_TOKEN?;
+		/* setup returned fields and returned information */
+		Span s = {usz.max,usz.max};
+		List { LexerNodeChild } c;
+		LexerNode* pattern;
+		LexerNode* terminal_type;
+
+		/* make sure that the tree doesn't get leaked on a failed parse */
+		defer catch
+		{
+			foreach (n : c)
+			{
+				if (!n.is_terminal)
+				{
+					n.nonterminal.free(self.allocator);
+				}
+			}
+		}
+
+		/* attempt to parse the node */
+		c.push({.is_terminal = false, .nonterminal = self.parse_terminal_type()!});
+		terminal_type = c[^1].nonterminal;
+		s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
+		c.push({.is_terminal = true, .terminal = self.peek()!});
+		s = self.expect(s,LexerTokenT.DEFINITION)!;
+		c.push({.is_terminal = false, .nonterminal = self.parse_pattern()!});
+		pattern = c[^1].nonterminal;
+		s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
+
+		/* construct the parsed node from the returned fields and information */
+		LexerNode* r = allocator::new(self.allocator, LexerNode);
+		r.type = TERMINAL;
+		r.span = s;
+		r.children = c.to_array(self.allocator);
+		r.terminal.pattern = pattern;
+		r.terminal.terminal_type = terminal_type;
+		return r;
+	};
 }
 
 
@@ -874,14 +891,14 @@ fn LexerNode*? LexerParser.parse_namespaced_info(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		children.push(c[^1].terminal);
 		s = self.expect(s,LexerTokenT.INFORMATION_IDENT)!;
-		while (self.peek_is(LexerTokenT.INFORMATION_NAMESPACE))
+		while (self.peek_is(LexerTokenT.INFORMATION_NAMESPACE)!)
 		{
-			c.push({.is_terminal = true, .terminal = self.peek()});
+			c.push({.is_terminal = true, .terminal = self.peek()!});
 			s = self.expect(s,LexerTokenT.INFORMATION_NAMESPACE)!;
-			c.push({.is_terminal = true, .terminal = self.peek()});
+			c.push({.is_terminal = true, .terminal = self.peek()!});
 			children.push(c[^1].terminal);
 			s = self.expect(s,LexerTokenT.INFORMATION_IDENT)!;
 		}
@@ -918,7 +935,7 @@ fn LexerNode*? LexerParser.parse_error_terminal(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.ERROR)!;
 
 		/* construct the parsed node from the returned fields and information */
@@ -953,15 +970,15 @@ fn LexerNode*? LexerParser.parse_regex(&self)
 		}
 
 		/* attempt to parse the node */
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.REGEX_BEGIN)!;
 		do
 		{
-			c.push({.is_terminal = true, .terminal = self.peek()});
+			c.push({.is_terminal = true, .terminal = self.peek()!});
 			contents.push(c[^1].terminal);
 			s = self.expect(s,LexerTokenT.CHARACTER)!;
-		} while (self.peek_is(CHARACTER));
-		c.push({.is_terminal = true, .terminal = self.peek()});
+		} while (self.peek_is(CHARACTER)!);
+		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.REGEX_END)!;
 
 		/* construct the parsed node from the returned fields and information */
@@ -985,10 +1002,10 @@ interface LexerVisitor
 	fn any? visit_lexer_definition(LexerNode* node, LexerDefinitionContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_lexer_info(LexerNode* node, LexerInfoContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_named_terminal(LexerNode* node, NamedTerminalContext* node_ctx, any ctx=null) @optional;
-	fn any? visit_mode_definition(LexerNode* node, any ctx=null) @optional;
 	fn any? visit_drop_terminal(LexerNode* node, DropTerminalContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_terminal_ident(LexerNode* node, TerminalIdentContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_root(LexerNode* node, RootContext* node_ctx, any ctx=null) @optional;
+	fn any? visit_terminal(LexerNode* node, TerminalContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_namespaced_info(LexerNode* node, NamespacedInfoContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_error_terminal(LexerNode* node, any ctx=null) @optional;
 	fn any? visit_regex(LexerNode* node, RegexContext* node_ctx, any ctx=null) @optional;
@@ -1010,14 +1027,14 @@ fn any? LexerNode.visit(&self, LexerVisitor visitor, any ctx=null)
 			return &visitor.visit_lexer_info ? visitor.visit_lexer_info(self, &self.lexer_info, ctx) : self.visit_children(visitor, ctx);
 		case NAMED_TERMINAL:
 			return &visitor.visit_named_terminal ? visitor.visit_named_terminal(self, &self.named_terminal, ctx) : self.visit_children(visitor, ctx);
-		case MODE_DEFINITION:
-			return &visitor.visit_mode_definition ? visitor.visit_mode_definition(self, ctx) : self.visit_children(visitor, ctx);
 		case DROP_TERMINAL:
 			return &visitor.visit_drop_terminal ? visitor.visit_drop_terminal(self, &self.drop_terminal, ctx) : self.visit_children(visitor, ctx);
 		case TERMINAL_IDENT:
 			return &visitor.visit_terminal_ident ? visitor.visit_terminal_ident(self, &self.terminal_ident, ctx) : self.visit_children(visitor, ctx);
 		case ROOT:
 			return &visitor.visit_root ? visitor.visit_root(self, &self.root, ctx) : self.visit_children(visitor, ctx);
+		case TERMINAL:
+			return &visitor.visit_terminal ? visitor.visit_terminal(self, &self.terminal, ctx) : self.visit_children(visitor, ctx);
 		case NAMESPACED_INFO:
 			return &visitor.visit_namespaced_info ? visitor.visit_namespaced_info(self, &self.namespaced_info, ctx) : self.visit_children(visitor, ctx);
 		case ERROR_TERMINAL:

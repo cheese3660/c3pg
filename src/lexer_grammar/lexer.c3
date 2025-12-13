@@ -177,7 +177,6 @@ fn void? LexerLexer.advance_default(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = INFORMATION;
-		switches_modes = false;
 		type = BEGIN_INFORMATION;
 	}
 
@@ -186,7 +185,6 @@ fn void? LexerLexer.advance_default(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = COMMENT;
-		switches_modes = false;
 		is_drop = true;
 	}
 	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /\s+/
@@ -198,7 +196,7 @@ fn void? LexerLexer.advance_default(&self)
 	self.current_offset += length;
 	if (length == 0)
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0..1].tescape(true)));
+		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
 		self.current_offset += 1;
 		return runtime::UNEXPECTED_CHARACTER?;
 	}
@@ -250,7 +248,6 @@ fn void? LexerLexer.advance_information(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = BODY;
-		switches_modes = false;
 		type = END_INFORMATION;
 	}
 
@@ -259,7 +256,6 @@ fn void? LexerLexer.advance_information(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = COMMENT;
-		switches_modes = false;
 		is_drop = true;
 	}
 	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /\s+/
@@ -271,7 +267,7 @@ fn void? LexerLexer.advance_information(&self)
 	self.current_offset += length;
 	if (length == 0)
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0..1].tescape(true)));
+		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
 		self.current_offset += 1;
 		return runtime::UNEXPECTED_CHARACTER?;
 	}
@@ -297,7 +293,7 @@ fn void? LexerLexer.advance_body(&self)
 	bool switches_modes;
 	LexerMode next_mode;
 
-	if (try match = regex2.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /[A-Z][A-Z0-9_]/
+	if (try match = regex2.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /[A-Z][A-Z0-9_]*/
 	{
 		length = match.end_offset();
 		switches_modes = false;
@@ -365,7 +361,6 @@ fn void? LexerLexer.advance_body(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = REGEX;
-		switches_modes = false;
 		type = REGEX_BEGIN;
 	}
 
@@ -374,7 +369,6 @@ fn void? LexerLexer.advance_body(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = STRING;
-		switches_modes = false;
 		type = STRING_BEGIN;
 	}
 
@@ -383,7 +377,6 @@ fn void? LexerLexer.advance_body(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = COMMENT;
-		switches_modes = false;
 		is_drop = true;
 	}
 	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /\s+/
@@ -395,7 +388,7 @@ fn void? LexerLexer.advance_body(&self)
 	self.current_offset += length;
 	if (length == 0)
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0..1].tescape(true)));
+		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
 		self.current_offset += 1;
 		return runtime::UNEXPECTED_CHARACTER?;
 	}
@@ -427,8 +420,14 @@ fn void? LexerLexer.advance_regex(&self)
 		is_pop = false;
 		switches_modes = true;
 		next_mode = ESCAPE;
-		switches_modes = false;
 		type = CHARACTER;
+	}
+
+	if (1 > length && rest.starts_with("/"))
+	{
+		length = 1;
+		is_pop = true;
+		type = REGEX_END;
 	}
 
 	if (try match = regex3.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /./
@@ -439,18 +438,10 @@ fn void? LexerLexer.advance_regex(&self)
 		type = CHARACTER;
 	}
 
-	if (1 > length && rest.starts_with("/"))
-	{
-		length = 1;
-		is_pop = true;
-		switches_modes = false;
-		type = REGEX_END;
-	}
-
 	self.current_offset += length;
 	if (length == 0)
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0..1].tescape(true)));
+		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
 		self.current_offset += 1;
 		return runtime::UNEXPECTED_CHARACTER?;
 	}
@@ -487,8 +478,14 @@ fn void? LexerLexer.advance_string(&self)
 		is_pop = false;
 		switches_modes = true;
 		next_mode = ESCAPE;
-		switches_modes = false;
 		type = CHARACTER;
+	}
+
+	if (1 > length && rest.starts_with("'"))
+	{
+		length = 1;
+		is_pop = true;
+		type = STRING_END;
 	}
 
 	if (try match = regex3.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /./
@@ -499,18 +496,10 @@ fn void? LexerLexer.advance_string(&self)
 		type = CHARACTER;
 	}
 
-	if (1 > length && rest.starts_with("'"))
-	{
-		length = 1;
-		is_pop = true;
-		switches_modes = false;
-		type = STRING_END;
-	}
-
 	self.current_offset += length;
 	if (length == 0)
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0..1].tescape(true)));
+		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
 		self.current_offset += 1;
 		return runtime::UNEXPECTED_CHARACTER?;
 	}
@@ -547,7 +536,7 @@ fn void? LexerLexer.advance_escape(&self)
 	self.current_offset += length;
 	if (length == 0)
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0..1].tescape(true)));
+		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
 		self.current_offset += 1;
 		return runtime::UNEXPECTED_CHARACTER?;
 	}
@@ -581,7 +570,7 @@ fn void? LexerLexer.advance_comment(&self)
 	self.current_offset += length;
 	if (length == 0)
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0..1].tescape(true)));
+		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
 		self.current_offset += 1;
 		return runtime::UNEXPECTED_CHARACTER?;
 	}
@@ -601,7 +590,7 @@ fn void? LexerLexer.advance_comment(&self)
 
 RuntimeRegex regex0; // /\s+/
 RuntimeRegex regex1; // /[a-z][a-zA-Z0-9_]*/
-RuntimeRegex regex2; // /[A-Z][A-Z0-9_]/
+RuntimeRegex regex2; // /[A-Z][A-Z0-9_]*/
 RuntimeRegex regex3; // /./
 RuntimeRegex regex4; // /.+/
 
@@ -611,7 +600,7 @@ fn void init_regexen() @private @init
 {
 	regex0 = regex::make_runtime_regex(`\s+`,NONE,mem)!!;
 	regex1 = regex::make_runtime_regex(`[a-z][a-zA-Z0-9_]*`,NONE,mem)!!;
-	regex2 = regex::make_runtime_regex(`[A-Z][A-Z0-9_]`,NONE,mem)!!;
+	regex2 = regex::make_runtime_regex(`[A-Z][A-Z0-9_]*`,NONE,mem)!!;
 	regex3 = regex::make_runtime_regex(`.`,NONE,mem)!!;
 	regex4 = regex::make_runtime_regex(`.+`,NONE,mem)!!;
 }

@@ -175,7 +175,7 @@ fn LexerDefinition parse_lexer(String infile)
                 case IN_MAIN_BODY:
                     if (try match = terminal_declaration.match_in_view(line, 0, tmem))
                     {
-                        LexerTerminal terminal = { match[1].captured, match[2].captured, match[3].captured == "/", match[3].captured == "/" ? match[4].captured : match[4].captured.unescape_better(outer_tmem,true)!!};
+                        LexerTerminal terminal = { match[1].captured, match[2].captured, match[3].captured == "/", match[3].captured == "/" ? match[4].captured : match[4].captured.unescape(outer_tmem,true,true)!!};
                         result.modes[^1].terminals.push(terminal);
                     }
                     else if (try match = mode_declaration.match_in_view(line, 0, tmem))
@@ -488,12 +488,14 @@ fn void generate_lexer(String infile, String outfile)
 
                         if (needs_switches_modes && !all_is_switches)
                         {
+                            bool first_executed;
                             if (terminal.push_mode.len > 0 && terminal.push_mode != "POP")
                             {
+                                first_executed = true;
                                 cg.line("switches_modes = true;");
                                 cg.line("next_mode = %s;", terminal.push_mode);
                             }
-                            else if (terminal.push_mode);
+                            else if (terminal.push_mode.len == 0)
                             {
                                 cg.line("switches_modes = false;");   
                             }
@@ -522,7 +524,7 @@ fn void generate_lexer(String infile, String outfile)
                 cg.line("self.current_offset += length;");
                 cg.@if("length == 0")
                 {
-                    cg.line("self.log_here(string::tformat(`Unexpected character '%%s'!`, rest[0..1].tescape(true)));");
+                    cg.line("self.log_here(string::tformat(`Unexpected character '%%s'!`, rest[0:1].tescape(true)));");
                     cg.line("self.current_offset += 1;");
                     cg.line("return runtime::UNEXPECTED_CHARACTER?;");
                 };

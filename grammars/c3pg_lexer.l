@@ -21,7 +21,7 @@ END_INFORMATION(BODY)   := '}'                      # Finally we end all informa
 @drop           := /\s+/ # We want to drop whitespace in the default mode
 
 mode BODY:
-IDENT                   := /[A-Z][A-Z0-9_]/         # Identifiers can only be uppercase for terminals
+IDENT                   := /[A-Z][A-Z0-9_]*/        # Identifiers can only be uppercase for terminals
 DEFINITION              := ':='                     # Definitions are done with ':='
 MODE                    := 'mode'                   # This begins a new mode
 MODE_BEGIN              := ':'
@@ -38,13 +38,13 @@ STRING_BEGIN(STRING)    := '\''
 
 mode !REGEX:
 CHARACTER(ESCAPE)               := '\\'
-CHARACTER                       := /./  # Multiple definitions can be done for the same terminal
 REGEX_END(POP)                  := '/'
+CHARACTER                       := /./  # Multiple definitions can be done for the same terminal
 
 mode !STRING:
 CHARACTER(ESCAPE)               := '\\' # Even across modes
-CHARACTER                       := /./
 STRING_END(POP)                 := '\''
+CHARACTER                       := /./
 
 mode !ESCAPE:
 CHARACTER(POP)                  := /./

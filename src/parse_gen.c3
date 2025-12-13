@@ -558,17 +558,17 @@ fn void ParserContext.generate_passthrough_information(&self, Codegen* cg, Alter
                 case NONE:
                     cg.line("self.expect({}, %sT.%s)!;", self.token_tname, quant.primary.reference);
                 case OPTIONAL:
-                    cg.@if("self.peek_is(%sT.%s)", self.token_tname, quant.primary.reference)
+                    cg.@if("self.peek_is(%sT.%s)!", self.token_tname, quant.primary.reference)
                     {
                         cg.line("self.next({})!");
                     };
                 case AT_LEAST_ONE:
-                    cg.@do_while("self.peek_is(%sT.%s)", self.token_tname, quant.primary.reference)
+                    cg.@do_while("self.peek_is(%sT.%s)!", self.token_tname, quant.primary.reference)
                     {
                         cg.line("self.expect({}, %sT.%s)!;", self.token_tname, quant.primary.reference);
                     };
                 case ANY_AMOUNT:
-                    cg.@while("self.peek_is(%sT.%s)", self.token_tname, quant.primary.reference)
+                    cg.@while("self.peek_is(%sT.%s)!", self.token_tname, quant.primary.reference)
                     {
                         cg.line("self.next({})!");
                     };
@@ -638,7 +638,7 @@ fn void ParserContext.generate_primary_information(&self, Codegen* cg, Primary* 
                     }
                     if (i == 0)
                     {
-                        cg.@if("self.peek_is(%s)", to_push.collate(", ", "%sT.%s", self.token_tname))
+                        cg.@if("self.peek_is(%s)!", to_push.collate(", ", "%sT.%s", self.token_tname))
                         {
                             foreach (&quant : alt.children)
                             {
@@ -648,7 +648,7 @@ fn void ParserContext.generate_primary_information(&self, Codegen* cg, Primary* 
                     }
                     else
                     {
-                        cg.@else_if("self.peek_is(%s)", to_push.collate(", ", "%sT.%s", self.token_tname))
+                        cg.@else_if("self.peek_is(%s)!", to_push.collate(", ", "%sT.%s", self.token_tname))
                         {
                             foreach (&quant : alt.children)
                             {
@@ -664,7 +664,7 @@ fn void ParserContext.generate_primary_information(&self, Codegen* cg, Primary* 
                 };
             }
         case TERMINAL:
-            cg.line("c.push({.is_terminal = true, .terminal = self.peek()});");
+            cg.line("c.push({.is_terminal = true, .terminal = self.peek()!});");
             if (primary.field.len)
             {
                 if (collated_named_tokens.get(primary.field)!!)
@@ -698,7 +698,7 @@ fn void ParserContext.generate_primary_information(&self, Codegen* cg, Primary* 
             {
                 cg.line("%s = c[^1].nonterminal;", primary.reference);
             }
-            cg.line("s += c[^1].nonterminal.span;");
+            cg.line("s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;");
 
     }
 }
@@ -735,19 +735,19 @@ fn void ParserContext.generate_quantified_information(&self, Codegen* cg, Quanti
             self.generate_primary_information(cg,&quant.primary,collated_nts, collated_named_nts, collated_named_tokens);
         case ANY_AMOUNT:
             String expected = self.get_primary_expected(&quant.primary);
-            cg.@while("self.peek_is(%s)", expected)
+            cg.@while("self.peek_is(%s)!", expected)
             {
                 self.generate_primary_information(cg,&quant.primary,collated_nts, collated_named_nts, collated_named_tokens);
             };
         case AT_LEAST_ONE:
             String expected = self.get_primary_expected(&quant.primary);
-            cg.@do_while("self.peek_is(%s)", expected)
+            cg.@do_while("self.peek_is(%s)!", expected)
             {
                 self.generate_primary_information(cg,&quant.primary,collated_nts, collated_named_nts, collated_named_tokens);
             };
         case OPTIONAL:
             String expected = self.get_primary_expected(&quant.primary);
-            cg.@if("self.peek_is(%s)", expected)
+            cg.@if("self.peek_is(%s)!", expected)
             {
                 self.generate_primary_information(cg,&quant.primary,collated_nts, collated_named_nts, collated_named_tokens);
             };
@@ -1019,7 +1019,7 @@ fn void ParserContext.generate_nonterminal_information(&self, NonterminalDefinit
                     io::eprintfn("Error: alternative %s of %s is not LL1 decidable from the others", i+1,def.name);
                     libc::exit(-1);
                 }
-                cg.@if("self.peek_is(%s)", to_push.collate(", ", "%sT.%s", self.token_tname))
+                cg.@if("self.peek_is(%s)!", to_push.collate(", ", "%sT.%s", self.token_tname))
                 {
                     self.generate_alternative_information(&cg, def, alt, &collated_nts, &collated_named_nts, &collated_named_tokens);
                 };
@@ -1156,19 +1156,24 @@ fn void generate_parser(String infile, String outfile)
             cg.line("return {lexer, allocator, logger, false};");
         };
         cg.line();
-        cg.@fn("%s %s.peek(&self) @inline @private", ctx.token_tname, ctx.parser_tname)
+        cg.@fn("%s? %s.peek(&self) @inline @private", ctx.token_tname, ctx.parser_tname)
         {
+            cg.@if("!self.primed")
+            {
+                cg.line("self.primed = true;");
+                cg.line("self.lexer.advance()!;");
+            };
             cg.line("return self.lexer.current;");
         };
         cg.line();
-        cg.@fn("%sT %s.peek_t(&self) @inline @private", ctx.token_tname, ctx.parser_tname)
+        cg.@fn("%sT? %s.peek_t(&self) @inline @private", ctx.token_tname, ctx.parser_tname)
         {
-            cg.line("return self.peek().type;");
+            cg.line("return self.peek()!.type;");
         };
         cg.line();
         cg.@fn("Span? %s.next(&self, Span current) @inline @private", ctx.parser_tname)
         {
-            cg.line("Span result = self.peek().span;");
+            cg.line("Span result = self.peek()!.span;");
             cg.line("if (current.begin != usz.max) result = current + result;");
             cg.line("self.lexer.advance()!;");
             cg.line("return result;");
@@ -1186,18 +1191,18 @@ fn void generate_parser(String infile, String outfile)
         cg.line();
         cg.@fn("void %s.log_unexpected(&self, String expected) @inline @private", ctx.parser_tname)
         {
-            cg.line("self.log_current(string::tformat(`Unexpected token \"%%s\", expected %%s;`, runtime::get_terminal_name(self.peek_t()), expected));");
+            cg.line("self.log_current(string::tformat(`Unexpected token \"%%s\", expected %%s;`, runtime::get_terminal_name(self.peek_t()!!), expected));");
         };
         cg.line();
-        cg.@macro("bool %s.peek_is(&self, ...) @private", ctx.parser_tname)
+        cg.@macro("bool? %s.peek_is(&self, ...) @private", ctx.parser_tname)
         {
-            cg.line("var current = self.peek_t();");
+            cg.line("var current = self.peek_t()!;");
             cg.line("return runtime::is_any_of(current, $vasplat);");
         };
         cg.line();
         cg.@macro("Span? %s.expect(&self, Span current_span, ...) @private", ctx.parser_tname, ctx.token_tname)
         {
-            cg.@if("self.peek_is($vasplat)")
+            cg.@if("self.peek_is($vasplat)!")
             {
                 cg.line("return self.next(current_span);");
             };

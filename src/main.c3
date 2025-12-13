@@ -3,6 +3,7 @@ import std::io;
 import regex;
 import c3pg::lex_gen;
 import c3pg::parse_gen;
+import c3pg::lexer_generator;
 import libc;
 
 fn void print_usage() @noreturn
@@ -39,7 +40,8 @@ fn int main(String[] args)
     {
         case 'l':
             // We generate a lexer from this file!
-            lex_gen::generate_lexer(in,out);
+            lexer_generator::generate(in,out);
+            // lex_gen::generate_lexer(in,out);
             return 0;
         case 'g':
             parse_gen::generate_parser(in,out);
