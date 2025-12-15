@@ -27,8 +27,7 @@ named_terminal := IDENT{name} next_state?;
 
 drop_terminal  := DROP next_state?;
 
-error_terminal := ERROR;
-
+error_terminal := ERROR next_state? (MODE_ERRORS string{e})?; # terminals can have error messages like @error !'Invalid string literal' := 
 
 terminal_ident  := IDENT{name}
                 |  DROP

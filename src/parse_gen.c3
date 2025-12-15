@@ -681,7 +681,7 @@ fn void ParserContext.generate_primary_information(&self, Codegen* cg, Primary* 
             cg.line("c.push({.is_terminal = false, .nonterminal = self.parse_%s()!});", primary.reference);
             if (primary.field.len)
             {
-                if (collated_named_tokens.get(primary.field)!!)
+                if (collated_named_nts.get(primary.field)!!)
                 {
                     cg.line("%s.push(c[^1].nonterminal);", primary.field);
                 }

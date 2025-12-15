@@ -56,7 +56,7 @@ fn any? LexerTransformer.visit_drop_terminal(
 fn any? LexerTransformer.visit_error_terminal(
     &self,
     LexerNode* node,
-    // ErrorTerminalContext* node_ctx,
+    ErrorTerminalContext* node_ctx,
     any ctx = null
 ) @dynamic
 {
@@ -64,6 +64,10 @@ fn any? LexerTransformer.visit_error_terminal(
     // TODO: Add error messages
     lt_ctx.type = ERROR;
     // node_ctx.pattern.visit(self, ctx)!;
+    if (node_ctx.e)
+    {
+        node_ctx.e[0].visit(self, &lt_ctx.error)!;
+    }
     return null;
 }
 
@@ -84,6 +88,7 @@ enum EscapeSequenceState
 faultdef STRING_FAILED_VALIDATION;
 faultdef REGEX_FAILED_VALIDATION;
 
+import std::io;
 fn any? LexerTransformer.visit_string(
     &self,
     LexerNode* node,
@@ -91,8 +96,17 @@ fn any? LexerTransformer.visit_string(
     any ctx = null
 ) @dynamic
 {
-    LexerTerminal* lt_ctx = anycast(ctx, LexerTerminal)!;
-    lt_ctx.is_pattern_regex = false;
+    String* target;
+    if (ctx.type == LexerTerminal)
+    {
+        LexerTerminal* lt_ctx = anycast(ctx, LexerTerminal)!!;
+        lt_ctx.is_pattern_regex = false;
+        target = &lt_ctx.pattern;
+    }
+    else if (ctx.type == String)
+    {
+        target = anycast(ctx, String)!!;
+    }
     
     /* Let's do some escape sequence validation, though we can likely do that in the lexer once we introduce error messages */
     DString being_built;
@@ -267,7 +281,7 @@ fn any? LexerTransformer.visit_string(
     {
         being_built.append_char32(built_character);
     }
-    lt_ctx.pattern = being_built.str_view();
+    *target = being_built.str_view();
     return null;
 }
 

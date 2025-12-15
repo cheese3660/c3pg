@@ -11,6 +11,7 @@ import std::collections::list;
 import regex;
 
 /* TOKEN TYPES */
+
 enum LexerTokenT : (String pattern)
 {
 	STRING_BEGIN = "'",
@@ -154,7 +155,6 @@ fn void? LexerLexer.single_advance(&self) @private
 			return self.advance_comment();
 	}
 }
-
 fn void? LexerLexer.advance_default(&self)
 {
 	usz offset = self.current_offset;
@@ -169,6 +169,7 @@ fn void? LexerLexer.advance_default(&self)
 	{
 		length = 5;
 		switches_modes = false;
+		is_drop = false;
 		type = LEXER_IDENTIFIER;
 	}
 
@@ -177,6 +178,7 @@ fn void? LexerLexer.advance_default(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = INFORMATION;
+		is_drop = false;
 		type = BEGIN_INFORMATION;
 	}
 
@@ -187,20 +189,15 @@ fn void? LexerLexer.advance_default(&self)
 		next_mode = COMMENT;
 		is_drop = true;
 	}
-	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /\s+/
+
+	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		switches_modes = false;
 		is_drop = true;
 	}
-	self.current_offset += length;
-	if (length == 0)
-	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
-		self.current_offset += 1;
-		return runtime::UNEXPECTED_CHARACTER?;
-	}
 
+	self.current_offset += length;
 	if (switches_modes)
 	{
 		self.enter_mode(next_mode, {offset, length});
@@ -222,10 +219,11 @@ fn void? LexerLexer.advance_information(&self)
 	bool switches_modes;
 	LexerMode next_mode;
 
-	if (try match = regex1.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /[a-z][a-zA-Z0-9_]*/
+	if (try match = regex1.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		switches_modes = false;
+		is_drop = false;
 		type = INFORMATION_IDENT;
 	}
 
@@ -233,6 +231,7 @@ fn void? LexerLexer.advance_information(&self)
 	{
 		length = 1;
 		switches_modes = false;
+		is_drop = false;
 		type = INFORMATION_SEPARATOR;
 	}
 
@@ -240,6 +239,7 @@ fn void? LexerLexer.advance_information(&self)
 	{
 		length = 2;
 		switches_modes = false;
+		is_drop = false;
 		type = INFORMATION_NAMESPACE;
 	}
 
@@ -248,6 +248,7 @@ fn void? LexerLexer.advance_information(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = BODY;
+		is_drop = false;
 		type = END_INFORMATION;
 	}
 
@@ -258,20 +259,15 @@ fn void? LexerLexer.advance_information(&self)
 		next_mode = COMMENT;
 		is_drop = true;
 	}
-	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /\s+/
+
+	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		switches_modes = false;
 		is_drop = true;
 	}
-	self.current_offset += length;
-	if (length == 0)
-	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
-		self.current_offset += 1;
-		return runtime::UNEXPECTED_CHARACTER?;
-	}
 
+	self.current_offset += length;
 	if (switches_modes)
 	{
 		self.enter_mode(next_mode, {offset, length});
@@ -293,10 +289,11 @@ fn void? LexerLexer.advance_body(&self)
 	bool switches_modes;
 	LexerMode next_mode;
 
-	if (try match = regex2.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /[A-Z][A-Z0-9_]*/
+	if (try match = regex2.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		switches_modes = false;
+		is_drop = false;
 		type = IDENT;
 	}
 
@@ -304,6 +301,7 @@ fn void? LexerLexer.advance_body(&self)
 	{
 		length = 2;
 		switches_modes = false;
+		is_drop = false;
 		type = DEFINITION;
 	}
 
@@ -311,6 +309,7 @@ fn void? LexerLexer.advance_body(&self)
 	{
 		length = 4;
 		switches_modes = false;
+		is_drop = false;
 		type = MODE;
 	}
 
@@ -318,6 +317,7 @@ fn void? LexerLexer.advance_body(&self)
 	{
 		length = 1;
 		switches_modes = false;
+		is_drop = false;
 		type = MODE_BEGIN;
 	}
 
@@ -325,6 +325,7 @@ fn void? LexerLexer.advance_body(&self)
 	{
 		length = 1;
 		switches_modes = false;
+		is_drop = false;
 		type = MODE_ERRORS;
 	}
 
@@ -332,6 +333,7 @@ fn void? LexerLexer.advance_body(&self)
 	{
 		length = 5;
 		switches_modes = false;
+		is_drop = false;
 		type = DROP;
 	}
 
@@ -339,6 +341,7 @@ fn void? LexerLexer.advance_body(&self)
 	{
 		length = 6;
 		switches_modes = false;
+		is_drop = false;
 		type = ERROR;
 	}
 
@@ -346,6 +349,7 @@ fn void? LexerLexer.advance_body(&self)
 	{
 		length = 1;
 		switches_modes = false;
+		is_drop = false;
 		type = LPAREN;
 	}
 
@@ -353,6 +357,7 @@ fn void? LexerLexer.advance_body(&self)
 	{
 		length = 1;
 		switches_modes = false;
+		is_drop = false;
 		type = RPAREN;
 	}
 
@@ -361,6 +366,7 @@ fn void? LexerLexer.advance_body(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = REGEX;
+		is_drop = false;
 		type = REGEX_BEGIN;
 	}
 
@@ -369,6 +375,7 @@ fn void? LexerLexer.advance_body(&self)
 		length = 1;
 		switches_modes = true;
 		next_mode = STRING;
+		is_drop = false;
 		type = STRING_BEGIN;
 	}
 
@@ -379,20 +386,15 @@ fn void? LexerLexer.advance_body(&self)
 		next_mode = COMMENT;
 		is_drop = true;
 	}
-	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /\s+/
+
+	if (try match = regex0.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		switches_modes = false;
 		is_drop = true;
 	}
-	self.current_offset += length;
-	if (length == 0)
-	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
-		self.current_offset += 1;
-		return runtime::UNEXPECTED_CHARACTER?;
-	}
 
+	self.current_offset += length;
 	if (switches_modes)
 	{
 		self.enter_mode(next_mode, {offset, length});
@@ -410,6 +412,8 @@ fn void? LexerLexer.advance_regex(&self)
 	String rest = self.file_data[offset..];
 	usz length;
 	LexerTokenT type;
+	bool is_error;
+	String error;
 	bool is_pop;
 	bool switches_modes;
 	LexerMode next_mode;
@@ -420,6 +424,7 @@ fn void? LexerLexer.advance_regex(&self)
 		is_pop = false;
 		switches_modes = true;
 		next_mode = ESCAPE;
+		is_error = false;
 		type = CHARACTER;
 	}
 
@@ -427,25 +432,34 @@ fn void? LexerLexer.advance_regex(&self)
 	{
 		length = 1;
 		is_pop = true;
+		switches_modes = false;
+		is_error = false;
 		type = REGEX_END;
 	}
 
-	if (try match = regex3.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /./
+	if (try match = regex3.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		is_pop = false;
 		switches_modes = false;
+		is_error = false;
 		type = CHARACTER;
 	}
 
-	self.current_offset += length;
-	if (length == 0)
+	if (1 > length && rest.starts_with("\n"))
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
-		self.current_offset += 1;
-		return runtime::UNEXPECTED_CHARACTER?;
+		length = 1;
+		is_pop = false;
+		switches_modes = false;
+		error = "Unterminated regex!";
+		is_error = true;
 	}
 
+	self.current_offset += length;
+	if (switches_modes)
+	{
+		self.enter_mode(next_mode, {offset, length});
+	}
 	if (is_pop)
 	{
 		self.mode_stack.pop()!!;
@@ -455,10 +469,12 @@ fn void? LexerLexer.advance_regex(&self)
 			return runtime::MODE_STACK_CLEARED?;
 		}
 	}
-	if (switches_modes)
+	if (is_error)
 	{
-		self.enter_mode(next_mode, {offset, length});
+		self.log_at({offset, length},error.len == 0 ? `error terminal lexed` : error);
+		return runtime::ERROR_TOKEN?;
 	}
+
 	self.current = {type, {offset,length}, rest[:length]};
 }
 
@@ -468,6 +484,8 @@ fn void? LexerLexer.advance_string(&self)
 	String rest = self.file_data[offset..];
 	usz length;
 	LexerTokenT type;
+	bool is_error;
+	String error;
 	bool is_pop;
 	bool switches_modes;
 	LexerMode next_mode;
@@ -478,6 +496,7 @@ fn void? LexerLexer.advance_string(&self)
 		is_pop = false;
 		switches_modes = true;
 		next_mode = ESCAPE;
+		is_error = false;
 		type = CHARACTER;
 	}
 
@@ -485,25 +504,34 @@ fn void? LexerLexer.advance_string(&self)
 	{
 		length = 1;
 		is_pop = true;
+		switches_modes = false;
+		is_error = false;
 		type = STRING_END;
 	}
 
-	if (try match = regex3.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /./
+	if (try match = regex3.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		is_pop = false;
 		switches_modes = false;
+		is_error = false;
 		type = CHARACTER;
 	}
 
-	self.current_offset += length;
-	if (length == 0)
+	if (1 > length && rest.starts_with("\n"))
 	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
-		self.current_offset += 1;
-		return runtime::UNEXPECTED_CHARACTER?;
+		length = 1;
+		is_pop = false;
+		switches_modes = false;
+		error = "Unterminated string!";
+		is_error = true;
 	}
 
+	self.current_offset += length;
+	if (switches_modes)
+	{
+		self.enter_mode(next_mode, {offset, length});
+	}
 	if (is_pop)
 	{
 		self.mode_stack.pop()!!;
@@ -513,10 +541,12 @@ fn void? LexerLexer.advance_string(&self)
 			return runtime::MODE_STACK_CLEARED?;
 		}
 	}
-	if (switches_modes)
+	if (is_error)
 	{
-		self.enter_mode(next_mode, {offset, length});
+		self.log_at({offset, length},error.len == 0 ? `error terminal lexed` : error);
+		return runtime::ERROR_TOKEN?;
 	}
+
 	self.current = {type, {offset,length}, rest[:length]};
 }
 
@@ -527,20 +557,13 @@ fn void? LexerLexer.advance_escape(&self)
 	usz length;
 	LexerTokenT type;
 
-	if (try match = regex3.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /./
+	if (try match = regex3.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		type = CHARACTER;
 	}
 
 	self.current_offset += length;
-	if (length == 0)
-	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
-		self.current_offset += 1;
-		return runtime::UNEXPECTED_CHARACTER?;
-	}
-
 	self.mode_stack.pop()!!;
 	if (self.mode_stack.len() == 0)
 	{
@@ -562,19 +585,14 @@ fn void? LexerLexer.advance_comment(&self)
 		length = 1;
 		is_pop = true;
 	}
-	if (try match = regex4.match_in_view(rest, 0, tmem) && match.end_offset() > length) // /.+/
+
+	if (try match = regex4.match_in_view(rest, 0, tmem) && match.end_offset() > length)
 	{
 		length = match.end_offset();
 		is_pop = false;
 	}
-	self.current_offset += length;
-	if (length == 0)
-	{
-		self.log_here(string::tformat(`Unexpected character '%s'!`, rest[0:1].tescape(true)));
-		self.current_offset += 1;
-		return runtime::UNEXPECTED_CHARACTER?;
-	}
 
+	self.current_offset += length;
 	if (is_pop)
 	{
 		self.mode_stack.pop()!!;
@@ -586,6 +604,7 @@ fn void? LexerLexer.advance_comment(&self)
 	}
 	return runtime::SINGLE_STEP_DROPPED?;
 }
+
 /* REGEXEN */
 
 RuntimeRegex regex0; // /\s+/

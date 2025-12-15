@@ -142,6 +142,18 @@ fn void NamespacedInfoContext.free(&self, Allocator a) @inline
 	allocator::free(a, self.children);
 }
 
+struct ErrorTerminalContext
+{
+	LexerNode*[] next_state;
+	LexerNode* string;
+	LexerNode* e;
+}
+
+fn void ErrorTerminalContext.free(&self, Allocator a) @inline
+{
+	allocator::free(a, self.next_state);
+}
+
 struct RegexContext
 {
 	LexerToken[] contents;
@@ -191,6 +203,7 @@ struct LexerNode
 		RootContext root;
 		TerminalContext terminal;
 		NamespacedInfoContext namespaced_info;
+		ErrorTerminalContext error_terminal;
 		RegexContext regex;
 	}
 }
@@ -229,6 +242,8 @@ fn void LexerNode.free(&self, Allocator a)
 			self.terminal.free(a);
 		case NAMESPACED_INFO:
 			self.namespaced_info.free(a);
+		case ERROR_TERMINAL:
+			self.error_terminal.free(a);
 		case REGEX:
 			self.regex.free(a);
 		default:
@@ -921,6 +936,9 @@ fn LexerNode*? LexerParser.parse_error_terminal(&self)
 		/* setup returned fields and returned information */
 		Span s = {usz.max,usz.max};
 		List { LexerNodeChild } c;
+		List { LexerNode* } next_state;
+		LexerNode* string;
+		LexerNode* e;
 
 		/* make sure that the tree doesn't get leaked on a failed parse */
 		defer catch
@@ -937,12 +955,30 @@ fn LexerNode*? LexerParser.parse_error_terminal(&self)
 		/* attempt to parse the node */
 		c.push({.is_terminal = true, .terminal = self.peek()!});
 		s = self.expect(s,LexerTokenT.ERROR)!;
+		if (self.peek_is(LexerTokenT.LPAREN)!)
+		{
+			c.push({.is_terminal = false, .nonterminal = self.parse_next_state()!});
+			next_state.push(c[^1].nonterminal);
+			s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
+		}
+		if (self.peek_is(LexerTokenT.MODE_ERRORS)!)
+		{
+			c.push({.is_terminal = true, .terminal = self.peek()!});
+			s = self.expect(s,LexerTokenT.MODE_ERRORS)!;
+			c.push({.is_terminal = false, .nonterminal = self.parse_string()!});
+			e = c[^1].nonterminal;
+			string = c[^1].nonterminal;
+			s = s.begin == usz.max ? c[^1].nonterminal.span : s + c[^1].nonterminal.span;
+		}
 
 		/* construct the parsed node from the returned fields and information */
 		LexerNode* r = allocator::new(self.allocator, LexerNode);
 		r.type = ERROR_TERMINAL;
 		r.span = s;
 		r.children = c.to_array(self.allocator);
+		r.error_terminal.next_state = next_state.to_array(self.allocator);
+		r.error_terminal.string = string;
+		r.error_terminal.e = e;
 		return r;
 	};
 }
@@ -1007,7 +1043,7 @@ interface LexerVisitor
 	fn any? visit_root(LexerNode* node, RootContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_terminal(LexerNode* node, TerminalContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_namespaced_info(LexerNode* node, NamespacedInfoContext* node_ctx, any ctx=null) @optional;
-	fn any? visit_error_terminal(LexerNode* node, any ctx=null) @optional;
+	fn any? visit_error_terminal(LexerNode* node, ErrorTerminalContext* node_ctx, any ctx=null) @optional;
 	fn any? visit_regex(LexerNode* node, RegexContext* node_ctx, any ctx=null) @optional;
 }
 
@@ -1038,7 +1074,7 @@ fn any? LexerNode.visit(&self, LexerVisitor visitor, any ctx=null)
 		case NAMESPACED_INFO:
 			return &visitor.visit_namespaced_info ? visitor.visit_namespaced_info(self, &self.namespaced_info, ctx) : self.visit_children(visitor, ctx);
 		case ERROR_TERMINAL:
-			return &visitor.visit_error_terminal ? visitor.visit_error_terminal(self, ctx) : self.visit_children(visitor, ctx);
+			return &visitor.visit_error_terminal ? visitor.visit_error_terminal(self, &self.error_terminal, ctx) : self.visit_children(visitor, ctx);
 		case REGEX:
 			return &visitor.visit_regex ? visitor.visit_regex(self, &self.regex, ctx) : self.visit_children(visitor, ctx);
 	}

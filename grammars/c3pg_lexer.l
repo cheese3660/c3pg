@@ -41,10 +41,14 @@ CHARACTER(ESCAPE)               := '\\'
 REGEX_END(POP)                  := '/'
 CHARACTER                       := /./  # Multiple definitions can be done for the same terminal
 
+@error(POP) !'Unterminated regex!' := '\n'
+
 mode !STRING:
 CHARACTER(ESCAPE)               := '\\' # Even across modes
 STRING_END(POP)                 := '\''
 CHARACTER                       := /./
+
+@error(POP) !'Unterminated string!' := '\n'
 
 mode !ESCAPE:
 CHARACTER(POP)                  := /./
